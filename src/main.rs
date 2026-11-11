@@ -100,7 +100,7 @@ fn print_status(game: &GameState) {
     if let Some(square) = game.pending_purchase_square() {
         println!("Pending purchase: {} for ${}", square.name(), game.pending_purchase_price().unwrap_or(0));
     }
-    println!("Free Parking pot: ${}", game.free_parking_pot);
+    println!("Lotto pot: ${}", game.lotto_pot);
     for (index, player) in game.players.iter().enumerate() {
         let square = &game.board[player.position];
         let label = square.board_label();

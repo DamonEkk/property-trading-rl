@@ -4,7 +4,7 @@ pub const BOARD_SIZE: usize = 40;
 pub const START_CASH: i32 = 1500;
 pub const PASS_GO_CASH: i32 = 200;
 pub const JAIL_POSITION: usize = 10;
-pub const FREE_PARKING_POSITION: usize = 20;
+pub const LOTTO_POSITION: usize = 20;
 pub const GO_TO_JAIL_POSITION: usize = 30;
 pub const JAIL_FINE: i32 = 50;
 pub const MAX_JAIL_TURNS: u8 = 3;
@@ -49,7 +49,7 @@ pub struct TradeOffer {
 pub struct Observation {
     pub turn: u32,
     pub current_player: usize,
-    pub free_parking_pot: i32,
+    pub lotto_pot: i32,
     pub pending_purchase: Option<usize>,
     pub players: Vec<PlayerState>,
     pub lots: Vec<Option<LotState>>,
@@ -61,7 +61,7 @@ impl Observation {
         out.push('{');
         out.push_str(&format!("\"turn\":{},", self.turn));
         out.push_str(&format!("\"current_player\":{},", self.current_player));
-        out.push_str(&format!("\"free_parking_pot\":{},", self.free_parking_pot));
+        out.push_str(&format!("\"lotto_pot\":{},", self.lotto_pot));
         match self.pending_purchase {
             Some(pos) => out.push_str(&format!("\"pending_purchase\":{},", pos)),
             None => out.push_str("\"pending_purchase\":null,"),
@@ -187,9 +187,9 @@ pub enum Square {
         amount: i32,
     },
     Jail,
-    FreeParking,
-    Chance,
-    CommunityChest,
+    Lotto,
+    LuckyDraw,
+    CommunityFund,
     GoToJail,
 }
 
@@ -199,9 +199,9 @@ impl Square {
             Square::Go => "GO",
             Square::Property { name, .. } | Square::Tax { name, .. } => name,
             Square::Jail => "Jail",
-            Square::FreeParking => "Free Parking",
-            Square::Chance => "Chance",
-            Square::CommunityChest => "Community Chest",
+            Square::Lotto => "Lotto",
+            Square::LuckyDraw => "Lucky Draw",
+            Square::CommunityFund => "Community Fund",
             Square::GoToJail => "Go To Jail",
         }
     }
@@ -254,9 +254,9 @@ impl fmt::Display for Square {
             Square::Property { name, .. } => write!(f, "{name}"),
             Square::Tax { name, amount } => write!(f, "{name} (${amount})"),
             Square::Jail => write!(f, "Jail"),
-            Square::FreeParking => write!(f, "Free Parking"),
-            Square::Chance => write!(f, "Chance"),
-            Square::CommunityChest => write!(f, "Community Chest"),
+            Square::Lotto => write!(f, "Lotto"),
+            Square::LuckyDraw => write!(f, "Lucky Draw"),
+            Square::CommunityFund => write!(f, "Community Fund"),
             Square::GoToJail => write!(f, "Go To Jail"),
         }
     }
@@ -340,12 +340,12 @@ pub struct GameState {
     pub players: Vec<PlayerState>,
     pub current_player: usize,
     pub turn: u32,
-    pub free_parking_pot: i32,
+    pub lotto_pot: i32,
     pub rng: SimpleRng,
     pub extra_turn_pending: bool,
     pending_purchase: Option<PendingPurchase>,
-    chance_deck: Vec<Card>,
-    chest_deck: Vec<Card>,
+    lucky_draw_deck: Vec<Card>,
+    community_fund_deck: Vec<Card>,
 }
 
 impl GameState {
@@ -366,12 +366,12 @@ impl GameState {
             players,
             current_player: 0,
             turn: 1,
-            free_parking_pot: 0,
+            lotto_pot: 0,
             rng: SimpleRng::seeded(seed),
             extra_turn_pending: false,
             pending_purchase: None,
-            chance_deck: chance_cards(),
-            chest_deck: community_chest_cards(),
+            lucky_draw_deck: lucky_draw_cards(),
+            community_fund_deck: community_fund_cards(),
         }
     }
 
@@ -379,7 +379,7 @@ impl GameState {
         Observation {
             turn: self.turn,
             current_player: self.current_player,
-            free_parking_pot: self.free_parking_pot,
+            lotto_pot: self.lotto_pot,
             pending_purchase: self.pending_purchase.as_ref().map(|p| p.position),
             players: self.players.clone(),
             lots: self.lots.clone(),
@@ -871,33 +871,33 @@ impl GameState {
             Square::Tax { name, amount } => {
                 self.players[player_index].cash -= amount;
                 messages.push(format!("Paid {name} of ${amount}."));
-                self.free_parking_pot += amount;
-                messages.push(format!("Free Parking pot is now ${}.", self.free_parking_pot));
+                self.lotto_pot += amount;
+                messages.push(format!("Lotto pot is now ${}.", self.lotto_pot));
                 self.resolve_cash_change(player_index, None, &mut messages);
             }
             Square::Jail => {
                 messages.push("Just visiting jail.".to_string());
             }
-            Square::FreeParking => {
-                if self.free_parking_pot > 0 {
-                    let bonus = self.free_parking_pot;
+            Square::Lotto => {
+                if self.lotto_pot > 0 {
+                    let bonus = self.lotto_pot;
                     self.players[player_index].cash += bonus;
-                    self.free_parking_pot = 0;
-                    messages.push(format!("Collected ${bonus} from Free Parking."));
+                    self.lotto_pot = 0;
+                    messages.push(format!("Collected ${bonus} from Lotto."));
                 } else {
-                    messages.push("Free Parking is empty.".to_string());
+                    messages.push("Lotto is empty.".to_string());
                 }
             }
-            Square::Chance => {
-                let card = draw_card(&mut self.chance_deck, &mut self.rng, chance_cards);
-                messages.push(format!("Chance card: {}", card.text));
+            Square::LuckyDraw => {
+                let card = draw_card(&mut self.lucky_draw_deck, &mut self.rng, lucky_draw_cards);
+                messages.push(format!("Lucky Draw card: {}", card.text));
                 let (mut card_messages, recheck) = self.apply_card(player_index, card);
                 messages.append(&mut card_messages);
                 return (messages, recheck);
             }
-            Square::CommunityChest => {
-                let card = draw_card(&mut self.chest_deck, &mut self.rng, community_chest_cards);
-                messages.push(format!("Community Chest card: {}", card.text));
+            Square::CommunityFund => {
+                let card = draw_card(&mut self.community_fund_deck, &mut self.rng, community_fund_cards);
+                messages.push(format!("Community Fund card: {}", card.text));
                 let (mut card_messages, recheck) = self.apply_card(player_index, card);
                 messages.append(&mut card_messages);
                 return (messages, recheck);
@@ -929,9 +929,9 @@ impl GameState {
             }
             CardEffect::Pay(amount) => {
                 self.players[player_index].cash -= amount;
-                self.free_parking_pot += amount;
+                self.lotto_pot += amount;
                 messages.push(format!("Paid ${amount}."));
-                messages.push(format!("Free Parking pot is now ${}.", self.free_parking_pot));
+                messages.push(format!("Lotto pot is now ${}.", self.lotto_pot));
                 self.resolve_cash_change(player_index, None, &mut messages);
             }
             CardEffect::GoToJail => {
@@ -1115,7 +1115,7 @@ fn default_board() -> Vec<Square> {
                 base_rent: 2,
             },
         },
-        Square::CommunityChest,
+        Square::CommunityFund,
         Square::Property {
             name: "Acland Street",
             cost: 60,
@@ -1140,7 +1140,7 @@ fn default_board() -> Vec<Square> {
                 base_rent: 6,
             },
         },
-        Square::Chance,
+        Square::LuckyDraw,
         Square::Property {
             name: "Swanston Street",
             cost: 100,
@@ -1206,7 +1206,7 @@ fn default_board() -> Vec<Square> {
                 base_rent: 14,
             },
         },
-        Square::CommunityChest,
+        Square::CommunityFund,
         Square::Property {
             name: "George Street",
             cost: 180,
@@ -1225,7 +1225,7 @@ fn default_board() -> Vec<Square> {
                 base_rent: 16,
             },
         },
-        Square::FreeParking,
+        Square::Lotto,
         Square::Property {
             name: "Oxford Street",
             cost: 220,
@@ -1235,7 +1235,7 @@ fn default_board() -> Vec<Square> {
                 base_rent: 18,
             },
         },
-        Square::Chance,
+        Square::LuckyDraw,
         Square::Property {
             name: "Dandenong Road",
             cost: 220,
@@ -1310,7 +1310,7 @@ fn default_board() -> Vec<Square> {
                 base_rent: 26,
             },
         },
-        Square::CommunityChest,
+        Square::CommunityFund,
         Square::Property {
             name: "St Kilda Road",
             cost: 320,
@@ -1325,7 +1325,7 @@ fn default_board() -> Vec<Square> {
             cost: 320,
             kind: PropertyKind::Airport { base_rent: 25 },
         },
-        Square::Chance,
+        Square::LuckyDraw,
         Square::Property {
             name: "Stirling Highway",
             cost: 350,
@@ -1348,7 +1348,7 @@ fn default_board() -> Vec<Square> {
     ]
 }
 
-fn chance_cards() -> Vec<Card> {
+fn lucky_draw_cards() -> Vec<Card> {
     vec![
         Card { text: "Advance to GO", effect: CardEffect::AdvanceTo(0) },
         Card { text: "Go to Jail", effect: CardEffect::GoToJail },
@@ -1361,7 +1361,7 @@ fn chance_cards() -> Vec<Card> {
     ]
 }
 
-fn community_chest_cards() -> Vec<Card> {
+fn community_fund_cards() -> Vec<Card> {
     vec![
         Card { text: "Advance to GO", effect: CardEffect::AdvanceTo(0) },
         Card { text: "Bank error in your favor", effect: CardEffect::Earn(200) },
@@ -1419,12 +1419,12 @@ mod tests {
         let expected: Vec<(usize, &'static str, &'static str)> = vec![
             (0, "GO", ""),
             (1, "Flinders Lane", "Brown"),
-            (2, "Community Chest", ""),
+            (2, "Community Fund", ""),
             (3, "Acland Street", "Brown"),
             (4, "Income Tax", ""),
             (5, "Sydney Airport", "Airport"),
             (6, "Bourke Street", "Light Blue"),
-            (7, "Chance", ""),
+            (7, "Lucky Draw", ""),
             (8, "Swanston Street", "Light Blue"),
             (9, "Elizabeth Street", "Light Blue"),
             (10, "Jail", ""),
@@ -1434,12 +1434,12 @@ mod tests {
             (14, "Collins Street", "Pink"),
             (15, "Melbourne Airport", "Airport"),
             (16, "King Street", "Orange"),
-            (17, "Community Chest", ""),
+            (17, "Community Fund", ""),
             (18, "George Street", "Orange"),
             (19, "Brunswick Street", "Orange"),
-            (20, "Free Parking", ""),
+            (20, "Lotto", ""),
             (21, "Oxford Street", "Red"),
-            (22, "Chance", ""),
+            (22, "Lucky Draw", ""),
             (23, "Dandenong Road", "Red"),
             (24, "Anzac Parade", "Red"),
             (25, "Brisbane Airport", "Airport"),
@@ -1450,10 +1450,10 @@ mod tests {
             (30, "Go To Jail", ""),
             (31, "Pacific Highway", "Green"),
             (32, "North Terrace", "Green"),
-            (33, "Community Chest", ""),
+            (33, "Community Fund", ""),
             (34, "St Kilda Road", "Green"),
             (35, "Perth Airport", "Airport"),
-            (36, "Chance", ""),
+            (36, "Lucky Draw", ""),
             (37, "Stirling Highway", "Dark Blue"),
             (38, "Luxury Tax", ""),
             (39, "Adelaide Terrace", "Dark Blue"),
@@ -1466,10 +1466,10 @@ mod tests {
         }
 
         assert!(matches!(game.board[0], Square::Go));
-        assert!(matches!(game.board[2], Square::CommunityChest));
-        assert!(matches!(game.board[7], Square::Chance));
+        assert!(matches!(game.board[2], Square::CommunityFund));
+        assert!(matches!(game.board[7], Square::LuckyDraw));
         assert!(matches!(game.board[10], Square::Jail));
-        assert!(matches!(game.board[20], Square::FreeParking));
+        assert!(matches!(game.board[20], Square::Lotto));
         assert!(matches!(game.board[30], Square::GoToJail));
     }
 
