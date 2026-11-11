@@ -1,10 +1,10 @@
 use std::io::{self, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use monopoly_cli::{Action, GameState, TradeOffer};
+use property_trading_rl::{Action, GameState, TradeOffer};
 
 fn main() {
-    println!("CLI Monopoly (ML-friendly core)");
+    println!("Property Trading RL (ML-friendly core)");
     println!("--------------------------------");
 
     let player_count = prompt_player_count();
@@ -102,14 +102,20 @@ fn print_status(game: &GameState) {
     }
     println!("Free Parking pot: ${}", game.free_parking_pot);
     for (index, player) in game.players.iter().enumerate() {
-        let square_name = &game.board[player.position];
+        let square = &game.board[player.position];
+        let label = square.board_label();
+        let location = if label.is_empty() {
+            square.name().to_string()
+        } else {
+            format!("{label}: {}", square.name())
+        };
         println!(
             "P{} {} | cash ${} | pos {} ({}){}",
             index + 1,
             player.name,
             player.cash,
             player.position,
-            square_name,
+            location,
             if player.in_jail { " | in jail" } else { "" }
         );
     }

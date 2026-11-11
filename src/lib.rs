@@ -166,7 +166,7 @@ pub enum PropertyKind {
         house_cost: i32,
         base_rent: i32,
     },
-    Railroad {
+    Airport {
         base_rent: i32,
     },
     Utility {
@@ -225,6 +225,24 @@ impl Square {
         match self {
             Square::Property { kind, .. } => Some(*kind),
             _ => None,
+        }
+    }
+
+    pub fn board_label(&self) -> &'static str {
+        match self {
+            Square::Property { kind: PropertyKind::Street { group, .. }, .. } => match group {
+                ColorGroup::Brown => "Brown",
+                ColorGroup::LightBlue => "Light Blue",
+                ColorGroup::Pink => "Pink",
+                ColorGroup::Orange => "Orange",
+                ColorGroup::Red => "Red",
+                ColorGroup::Yellow => "Yellow",
+                ColorGroup::Green => "Green",
+                ColorGroup::DarkBlue => "Dark Blue",
+            },
+            Square::Property { kind: PropertyKind::Airport { .. }, .. } => "Airport",
+            Square::Property { kind: PropertyKind::Utility { .. }, .. } => "Utility",
+            _ => "",
         }
     }
 }
@@ -480,7 +498,13 @@ impl GameState {
                 format!(" [{}]", occupants.join(", "))
             };
 
-            out.push_str(&format!("{:>2}: {:<22}{}{}{}\n", idx, square, marker, owner, buildings));
+            let label = square.board_label();
+            let label = if label.is_empty() {
+                String::new()
+            } else {
+                label.to_string()
+            };
+            out.push_str(&format!("{:<10}: {:<22}{}{}{}\n", label, square.name(), marker, owner, buildings));
         }
         out
     }
@@ -563,8 +587,8 @@ impl GameState {
             messages.push(format!("{} cannot have houses.", square.name()));
             return;
         }
-        if !self.player_owns_monopoly(player_index, position) {
-            messages.push(format!("{} does not own a monopoly on {}.", self.players[player_index].name, square.name()));
+        if !self.player_owns_full_set(player_index, position) {
+            messages.push(format!("{} does not own the full set on {}.", self.players[player_index].name, square.name()));
             return;
         }
         let Some(kind) = square.kind() else {
@@ -610,8 +634,8 @@ impl GameState {
             messages.push(format!("{} cannot have a hotel.", square.name()));
             return;
         }
-        if !self.player_owns_monopoly(player_index, position) {
-            messages.push(format!("{} does not own a monopoly on {}.", self.players[player_index].name, square.name()));
+        if !self.player_owns_full_set(player_index, position) {
+            messages.push(format!("{} does not own the full set on {}.", self.players[player_index].name, square.name()));
             return;
         }
         let Some(kind) = square.kind() else {
@@ -950,13 +974,13 @@ impl GameState {
                     base_rent * (1 + i32::from(lot.houses))
                 }
             }
-            Square::Property { kind: PropertyKind::Railroad { base_rent }, .. } => *base_rent,
+            Square::Property { kind: PropertyKind::Airport { base_rent }, .. } => *base_rent,
             Square::Property { kind: PropertyKind::Utility { base_rent }, .. } => *base_rent,
             _ => 0,
         }
     }
 
-    fn player_owns_monopoly(&self, player_index: usize, position: usize) -> bool {
+    fn player_owns_full_set(&self, player_index: usize, position: usize) -> bool {
         let Some(Square::Property { kind: PropertyKind::Street { group, .. }, .. }) = self.board.get(position) else {
             return false;
         };
@@ -965,7 +989,7 @@ impl GameState {
             .iter()
             .enumerate()
             .filter_map(|(idx, square)| match square {
-                Square::Property { kind: PropertyKind::Street { group: other_group, .. }, .. } if other_group == group => {
+            Square::Property { kind: PropertyKind::Street { group: other_group, .. }, .. } if other_group == group => {
                     Some(idx)
                 }
                 _ => None,
@@ -1083,7 +1107,7 @@ fn default_board() -> Vec<Square> {
     vec![
         Square::Go,
         Square::Property {
-            name: "Mediterranean Avenue",
+            name: "Flinders Lane",
             cost: 60,
             kind: PropertyKind::Street {
                 group: ColorGroup::Brown,
@@ -1093,7 +1117,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::CommunityChest,
         Square::Property {
-            name: "Baltic Avenue",
+            name: "Acland Street",
             cost: 60,
             kind: PropertyKind::Street {
                 group: ColorGroup::Brown,
@@ -1103,12 +1127,12 @@ fn default_board() -> Vec<Square> {
         },
         Square::Tax { name: "Income Tax", amount: 200 },
         Square::Property {
-            name: "Reading Railroad",
+            name: "Sydney Airport",
             cost: 200,
-            kind: PropertyKind::Railroad { base_rent: 25 },
+            kind: PropertyKind::Airport { base_rent: 25 },
         },
         Square::Property {
-            name: "Oriental Avenue",
+            name: "Bourke Street",
             cost: 100,
             kind: PropertyKind::Street {
                 group: ColorGroup::LightBlue,
@@ -1118,7 +1142,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::Chance,
         Square::Property {
-            name: "Vermont Avenue",
+            name: "Swanston Street",
             cost: 100,
             kind: PropertyKind::Street {
                 group: ColorGroup::LightBlue,
@@ -1127,7 +1151,7 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Connecticut Avenue",
+            name: "Elizabeth Street",
             cost: 120,
             kind: PropertyKind::Street {
                 group: ColorGroup::LightBlue,
@@ -1137,7 +1161,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::Jail,
         Square::Property {
-            name: "St. Charles Place",
+            name: "Lygon Street",
             cost: 140,
             kind: PropertyKind::Street {
                 group: ColorGroup::Pink,
@@ -1146,12 +1170,12 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Electric Company",
+            name: "Sydney Power Grid",
             cost: 150,
             kind: PropertyKind::Utility { base_rent: 10 },
         },
         Square::Property {
-            name: "States Avenue",
+            name: "Chapel Street",
             cost: 140,
             kind: PropertyKind::Street {
                 group: ColorGroup::Pink,
@@ -1160,7 +1184,7 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Virginia Avenue",
+            name: "Collins Street",
             cost: 160,
             kind: PropertyKind::Street {
                 group: ColorGroup::Pink,
@@ -1169,12 +1193,12 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Pennsylvania Railroad",
+            name: "Melbourne Airport",
             cost: 200,
-            kind: PropertyKind::Railroad { base_rent: 25 },
+            kind: PropertyKind::Airport { base_rent: 25 },
         },
         Square::Property {
-            name: "St. James Place",
+            name: "King Street",
             cost: 180,
             kind: PropertyKind::Street {
                 group: ColorGroup::Orange,
@@ -1184,7 +1208,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::CommunityChest,
         Square::Property {
-            name: "Tennessee Avenue",
+            name: "George Street",
             cost: 180,
             kind: PropertyKind::Street {
                 group: ColorGroup::Orange,
@@ -1193,7 +1217,7 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "New York Avenue",
+            name: "Brunswick Street",
             cost: 200,
             kind: PropertyKind::Street {
                 group: ColorGroup::Orange,
@@ -1203,7 +1227,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::FreeParking,
         Square::Property {
-            name: "Kentucky Avenue",
+            name: "Oxford Street",
             cost: 220,
             kind: PropertyKind::Street {
                 group: ColorGroup::Red,
@@ -1213,7 +1237,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::Chance,
         Square::Property {
-            name: "Indiana Avenue",
+            name: "Dandenong Road",
             cost: 220,
             kind: PropertyKind::Street {
                 group: ColorGroup::Red,
@@ -1222,7 +1246,7 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Illinois Avenue",
+            name: "Anzac Parade",
             cost: 240,
             kind: PropertyKind::Street {
                 group: ColorGroup::Red,
@@ -1231,12 +1255,12 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "B&O Railroad",
+            name: "Brisbane Airport",
             cost: 200,
-            kind: PropertyKind::Railroad { base_rent: 25 },
+            kind: PropertyKind::Airport { base_rent: 25 },
         },
         Square::Property {
-            name: "Atlantic Avenue",
+            name: "Macquarie Street",
             cost: 260,
             kind: PropertyKind::Street {
                 group: ColorGroup::Yellow,
@@ -1245,7 +1269,7 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Ventnor Avenue",
+            name: "Esplanade",
             cost: 260,
             kind: PropertyKind::Street {
                 group: ColorGroup::Yellow,
@@ -1254,12 +1278,12 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Water Works",
+            name: "Water Board",
             cost: 150,
             kind: PropertyKind::Utility { base_rent: 10 },
         },
         Square::Property {
-            name: "Marvin Gardens",
+            name: "Sturt Street",
             cost: 280,
             kind: PropertyKind::Street {
                 group: ColorGroup::Yellow,
@@ -1269,7 +1293,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::GoToJail,
         Square::Property {
-            name: "Pacific Avenue",
+            name: "Pacific Highway",
             cost: 300,
             kind: PropertyKind::Street {
                 group: ColorGroup::Green,
@@ -1278,7 +1302,7 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "North Carolina Avenue",
+            name: "North Terrace",
             cost: 300,
             kind: PropertyKind::Street {
                 group: ColorGroup::Green,
@@ -1288,7 +1312,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::CommunityChest,
         Square::Property {
-            name: "Pennsylvania Avenue",
+            name: "St Kilda Road",
             cost: 320,
             kind: PropertyKind::Street {
                 group: ColorGroup::Green,
@@ -1297,13 +1321,13 @@ fn default_board() -> Vec<Square> {
             },
         },
         Square::Property {
-            name: "Short Line",
-            cost: 200,
-            kind: PropertyKind::Railroad { base_rent: 25 },
+            name: "Perth Airport",
+            cost: 320,
+            kind: PropertyKind::Airport { base_rent: 25 },
         },
         Square::Chance,
         Square::Property {
-            name: "Park Place",
+            name: "Stirling Highway",
             cost: 350,
             kind: PropertyKind::Street {
                 group: ColorGroup::DarkBlue,
@@ -1313,7 +1337,7 @@ fn default_board() -> Vec<Square> {
         },
         Square::Tax { name: "Luxury Tax", amount: 100 },
         Square::Property {
-            name: "Boardwalk",
+            name: "Adelaide Terrace",
             cost: 400,
             kind: PropertyKind::Street {
                 group: ColorGroup::DarkBlue,
@@ -1328,8 +1352,8 @@ fn chance_cards() -> Vec<Card> {
     vec![
         Card { text: "Advance to GO", effect: CardEffect::AdvanceTo(0) },
         Card { text: "Go to Jail", effect: CardEffect::GoToJail },
-        Card { text: "Advance to Illinois Avenue", effect: CardEffect::AdvanceTo(24) },
-        Card { text: "Advance to St. Charles Place", effect: CardEffect::AdvanceTo(11) },
+        Card { text: "Advance to Anzac Parade", effect: CardEffect::AdvanceTo(24) },
+        Card { text: "Advance to Lygon Street", effect: CardEffect::AdvanceTo(11) },
         Card { text: "Go back 3 spaces", effect: CardEffect::MoveBy(-3) },
         Card { text: "Bank pays you dividend of $50", effect: CardEffect::Earn(50) },
         Card { text: "Pay poor tax of $15", effect: CardEffect::Pay(15) },
@@ -1348,4 +1372,334 @@ fn community_chest_cards() -> Vec<Card> {
         Card { text: "Free Parking bonus", effect: CardEffect::FreeParkingBonus(50) },
         Card { text: "Go back 3 spaces", effect: CardEffect::MoveBy(-3) },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn game(players: usize) -> GameState {
+        GameState::new(players, 12345)
+    }
+
+    fn set_owner(game: &mut GameState, position: usize, owner: usize) {
+        game.lots[position].as_mut().expect("buyable square").owner = Some(owner);
+    }
+
+    #[test]
+    fn dice_roll_helpers_work() {
+        let roll = DiceRoll { die1: 3, die2: 3 };
+        assert_eq!(roll.total(), 6);
+        assert!(roll.is_double());
+
+        let roll = DiceRoll { die1: 2, die2: 5 };
+        assert_eq!(roll.total(), 7);
+        assert!(!roll.is_double());
+    }
+
+    #[test]
+    fn rng_is_deterministic_for_same_seed() {
+        let mut a = SimpleRng::seeded(99);
+        let mut b = SimpleRng::seeded(99);
+
+        for _ in 0..32 {
+            assert_eq!(a.roll_die(), b.roll_die());
+            assert_eq!(a.range(17), b.range(17));
+        }
+
+        assert_eq!(SimpleRng::seeded(1).range(0), 0);
+    }
+
+    #[test]
+    fn board_has_all_40_expected_positions() {
+        let game = game(2);
+
+        assert_eq!(game.board.len(), 40);
+
+        let expected: Vec<(usize, &'static str, &'static str)> = vec![
+            (0, "GO", ""),
+            (1, "Flinders Lane", "Brown"),
+            (2, "Community Chest", ""),
+            (3, "Acland Street", "Brown"),
+            (4, "Income Tax", ""),
+            (5, "Sydney Airport", "Airport"),
+            (6, "Bourke Street", "Light Blue"),
+            (7, "Chance", ""),
+            (8, "Swanston Street", "Light Blue"),
+            (9, "Elizabeth Street", "Light Blue"),
+            (10, "Jail", ""),
+            (11, "Lygon Street", "Pink"),
+            (12, "Sydney Power Grid", "Utility"),
+            (13, "Chapel Street", "Pink"),
+            (14, "Collins Street", "Pink"),
+            (15, "Melbourne Airport", "Airport"),
+            (16, "King Street", "Orange"),
+            (17, "Community Chest", ""),
+            (18, "George Street", "Orange"),
+            (19, "Brunswick Street", "Orange"),
+            (20, "Free Parking", ""),
+            (21, "Oxford Street", "Red"),
+            (22, "Chance", ""),
+            (23, "Dandenong Road", "Red"),
+            (24, "Anzac Parade", "Red"),
+            (25, "Brisbane Airport", "Airport"),
+            (26, "Macquarie Street", "Yellow"),
+            (27, "Esplanade", "Yellow"),
+            (28, "Water Board", "Utility"),
+            (29, "Sturt Street", "Yellow"),
+            (30, "Go To Jail", ""),
+            (31, "Pacific Highway", "Green"),
+            (32, "North Terrace", "Green"),
+            (33, "Community Chest", ""),
+            (34, "St Kilda Road", "Green"),
+            (35, "Perth Airport", "Airport"),
+            (36, "Chance", ""),
+            (37, "Stirling Highway", "Dark Blue"),
+            (38, "Luxury Tax", ""),
+            (39, "Adelaide Terrace", "Dark Blue"),
+        ];
+
+        for (index, expected_name, expected_label) in expected {
+            let square = &game.board[index];
+            assert_eq!(square.name(), expected_name, "unexpected square name at index {index}");
+            assert_eq!(square.board_label(), expected_label, "unexpected label at index {index}");
+        }
+
+        assert!(matches!(game.board[0], Square::Go));
+        assert!(matches!(game.board[2], Square::CommunityChest));
+        assert!(matches!(game.board[7], Square::Chance));
+        assert!(matches!(game.board[10], Square::Jail));
+        assert!(matches!(game.board[20], Square::FreeParking));
+        assert!(matches!(game.board[30], Square::GoToJail));
+    }
+
+    #[test]
+    fn street_colour_groups_are_complete() {
+        let game = game(2);
+
+        let mut brown = 0;
+        let mut light_blue = 0;
+        let mut pink = 0;
+        let mut orange = 0;
+        let mut red = 0;
+        let mut yellow = 0;
+        let mut green = 0;
+        let mut dark_blue = 0;
+
+        for square in &game.board {
+            if let Square::Property { kind: PropertyKind::Street { group, .. }, .. } = square {
+                match group {
+                    ColorGroup::Brown => brown += 1,
+                    ColorGroup::LightBlue => light_blue += 1,
+                    ColorGroup::Pink => pink += 1,
+                    ColorGroup::Orange => orange += 1,
+                    ColorGroup::Red => red += 1,
+                    ColorGroup::Yellow => yellow += 1,
+                    ColorGroup::Green => green += 1,
+                    ColorGroup::DarkBlue => dark_blue += 1,
+                }
+            }
+        }
+
+        assert_eq!(brown, 2);
+        assert_eq!(light_blue, 3);
+        assert_eq!(pink, 3);
+        assert_eq!(orange, 3);
+        assert_eq!(red, 3);
+        assert_eq!(yellow, 3);
+        assert_eq!(green, 3);
+        assert_eq!(dark_blue, 2);
+    }
+
+    #[test]
+    fn airports_are_all_present() {
+        let game = game(2);
+        let airports: Vec<_> = game
+            .board
+            .iter()
+            .enumerate()
+            .filter(|(_, square)| matches!(square, Square::Property { kind: PropertyKind::Airport { .. }, .. }))
+            .map(|(idx, square)| (idx, square.name()))
+            .collect();
+
+        assert_eq!(airports, vec![(5, "Sydney Airport"), (15, "Melbourne Airport"), (25, "Brisbane Airport"), (35, "Perth Airport")]);
+    }
+
+    #[test]
+    fn movement_wraps_from_last_square_to_go_and_collects_pass_go_cash() {
+        let mut game = game(2);
+        game.players[0].position = 39;
+        let messages = game.move_by(0, 1, true);
+
+        assert_eq!(game.players[0].position, 0);
+        assert_eq!(game.players[0].cash, START_CASH + PASS_GO_CASH);
+        assert!(messages.iter().any(|m| m.contains("Passed GO and collected $200.")));
+    }
+
+    #[test]
+    fn move_to_from_late_board_space_collects_pass_go_cash_when_wrapping() {
+        let mut game = game(2);
+        game.players[0].position = 39;
+        let messages = game.move_to(0, 3, true);
+
+        assert_eq!(game.players[0].position, 3);
+        assert_eq!(game.players[0].cash, START_CASH + PASS_GO_CASH);
+        assert!(messages.iter().any(|m| m.contains("Passed GO and collected $200.")));
+    }
+
+    #[test]
+    fn game_initialises_with_expected_board_size_and_lots() {
+        let game = game(2);
+        assert_eq!(game.board.len(), BOARD_SIZE);
+        assert_eq!(game.lots.len(), BOARD_SIZE);
+        assert_eq!(game.players.len(), 2);
+        assert_eq!(game.players[0].cash, START_CASH);
+    }
+
+    #[test]
+    fn legal_actions_change_when_purchase_is_pending() {
+        let mut game = game(2);
+        assert_eq!(game.legal_actions(), vec![Action::Roll, Action::Trade(TradeOffer {
+            from: 0,
+            to: 0,
+            cash_from_offer: 0,
+            cash_to_offer: 0,
+            give_positions: vec![],
+            receive_positions: vec![],
+        })]);
+
+        game.pending_purchase = Some(PendingPurchase { position: 1 });
+        assert_eq!(game.legal_actions(), vec![Action::BuyProperty, Action::DeclineProperty]);
+    }
+
+    #[test]
+    fn buying_property_deducts_cash_and_assigns_owner() {
+        let mut game = game(2);
+        game.players[0].position = 1;
+
+        let outcome = game.resolve_position(0);
+        assert!(outcome.iter().any(|m| m.contains("Buy for $60 or decline.")));
+        assert_eq!(game.pending_purchase_square().map(Square::name), Some("Flinders Lane"));
+
+        let result = game.step(Action::BuyProperty);
+        assert!(result.messages.iter().any(|m| m.contains("Bought Flinders Lane for $60.")));
+        assert_eq!(game.lots[1].as_ref().and_then(|l| l.owner), Some(0));
+        assert_eq!(game.players[0].cash, START_CASH - 60);
+        assert!(game.pending_purchase.is_none());
+    }
+
+    #[test]
+    fn declining_property_clears_pending_purchase_without_sale() {
+        let mut game = game(2);
+        game.players[0].position = 3;
+        let _ = game.resolve_position(0);
+        assert!(game.pending_purchase.is_some());
+
+        let result = game.step(Action::DeclineProperty);
+        assert!(result.messages.iter().any(|m| m.contains("Declined purchase of Acland Street.")));
+        assert!(game.pending_purchase.is_none());
+        assert_eq!(game.lots[3].as_ref().and_then(|l| l.owner), None);
+    }
+
+    #[test]
+    fn jail_roll_with_doubles_releases_player_and_grants_extra_turn() {
+        let mut game = game(2);
+        game.players[0].in_jail = true;
+        game.players[0].jail_turns_left = 3;
+        game.players[0].position = JAIL_POSITION;
+
+        let mut messages = Vec::new();
+        game.handle_jail_roll(0, DiceRoll { die1: 4, die2: 4 }, &mut messages);
+
+        assert!(messages.iter().any(|m| m.contains("Rolled doubles and got out of jail.")));
+        assert!(game.players[0].active);
+        assert!(!game.players[0].in_jail);
+        assert_eq!(game.players[0].jail_turns_left, 0);
+        assert_eq!(game.players[0].position, JAIL_POSITION + 8);
+        assert!(game.extra_turn_pending);
+    }
+
+    #[test]
+    fn jail_roll_without_doubles_counts_down_and_releases_on_last_turn() {
+        let mut game = game(2);
+        game.players[0].in_jail = true;
+        game.players[0].jail_turns_left = 2;
+        game.players[0].position = JAIL_POSITION;
+
+        let mut messages = Vec::new();
+        game.handle_jail_roll(0, DiceRoll { die1: 2, die2: 3 }, &mut messages);
+
+        assert!(messages.iter().any(|m| m.contains("No doubles. Jail turns left: 1.")));
+        assert!(game.players[0].in_jail);
+        assert_eq!(game.players[0].jail_turns_left, 1);
+        assert_eq!(game.players[0].position, JAIL_POSITION);
+
+        let mut messages = Vec::new();
+        game.handle_jail_roll(0, DiceRoll { die1: 1, die2: 2 }, &mut messages);
+
+        assert!(messages.iter().any(|m| m.contains("Paid $50 to get out")));
+        assert!(!game.players[0].in_jail);
+        assert_eq!(game.players[0].jail_turns_left, 0);
+        assert_eq!(game.players[0].cash, START_CASH - JAIL_FINE);
+        assert_eq!(game.players[0].position, JAIL_POSITION + 3);
+    }
+
+    #[test]
+    fn rent_payment_transfers_cash_and_bankrupts_player_with_assets() {
+        let mut game = game(2);
+        set_owner(&mut game, 1, 0);
+        set_owner(&mut game, 3, 1);
+
+        game.players[1].cash = 0;
+        game.players[1].position = 1;
+
+        let messages = game.resolve_position(1);
+
+        assert!(messages.iter().any(|m| m.contains("Paid $2 rent to Player 1.")));
+        assert!(messages.iter().any(|m| m.contains("Player 2 is bankrupt for $2.")));
+        assert!(!game.players[1].active);
+        assert_eq!(game.players[1].cash, 0);
+        assert_eq!(game.lots[3].as_ref().and_then(|l| l.owner), Some(0));
+        assert_eq!(game.lots[1].as_ref().and_then(|l| l.owner), Some(0));
+    }
+
+    #[test]
+    fn houses_require_full_set_and_hotel_requires_four_houses() {
+        let mut game = game(2);
+        set_owner(&mut game, 1, 0);
+        set_owner(&mut game, 3, 0);
+
+        let mut messages = Vec::new();
+        game.handle_build_house(0, 1, &mut messages);
+        assert!(messages.iter().any(|m| m.contains("Built a house on Flinders Lane for $50.")));
+        assert_eq!(game.lots[1].as_ref().unwrap().houses, 1);
+        assert_eq!(game.players[0].cash, START_CASH - 50);
+
+        game.handle_build_house(0, 1, &mut messages);
+        game.handle_build_house(0, 1, &mut messages);
+        game.handle_build_house(0, 1, &mut messages);
+        assert_eq!(game.lots[1].as_ref().unwrap().houses, 4);
+
+        game.handle_build_hotel(0, 1, &mut messages);
+        assert!(messages.iter().any(|m| m.contains("Built a hotel on Flinders Lane for $50.")));
+        assert!(game.lots[1].as_ref().unwrap().hotel);
+        assert_eq!(game.lots[1].as_ref().unwrap().houses, 0);
+        assert_eq!(game.players[0].cash, START_CASH - 250);
+    }
+
+    #[test]
+    fn cannot_build_before_complete_set_or_without_four_houses() {
+        let mut game = game(2);
+        set_owner(&mut game, 1, 0);
+
+        let mut messages = Vec::new();
+        game.handle_build_house(0, 1, &mut messages);
+        assert!(messages.iter().any(|m| m.contains("does not own the full set")));
+        assert_eq!(game.lots[1].as_ref().unwrap().houses, 0);
+
+        set_owner(&mut game, 3, 0);
+        game.handle_build_hotel(0, 1, &mut messages);
+        assert!(messages.iter().any(|m| m.contains("Build 4 houses before building a hotel.")));
+        assert!(!game.lots[1].as_ref().unwrap().hotel);
+    }
 }

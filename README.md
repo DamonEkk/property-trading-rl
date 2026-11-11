@@ -1,4 +1,4 @@
-# Monopoly CLI
+# Property Trading RL
 
 This is a small Rust terminal game built to be easy to extend for machine learning.
 
