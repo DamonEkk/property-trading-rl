@@ -391,20 +391,25 @@ impl GameState {
     }
 
     pub fn legal_actions(&self) -> Vec<Action> {
-        if self.pending_purchase.is_some() {
-            vec![Action::BuyProperty, Action::DeclineProperty]
-        } else {
-            vec![
-                Action::Roll,
-                Action::Trade(TradeOffer {
-                    from: self.current_player,
-                    to: self.current_player,
-                    cash_from_offer: 0,
-                    cash_to_offer: 0,
-                    give_positions: vec![],
-                    receive_positions: vec![],
-                }),
-            ]
+        let mut actions = Vec::new();
+
+        for action in self.enumerated_legal_actions() {
+            if self.is_action_valid(&action) {
+                actions.push(action);
+            }
+        }
+
+        actions
+    }
+
+    pub fn is_action_valid(&self, action: &Action) -> bool {
+        match action {
+            Action::Roll => self.pending_purchase.is_none(),
+            Action::BuyProperty => self.can_buy_pending_property(),
+            Action::DeclineProperty => self.pending_purchase.is_some(),
+            Action::BuildHouse { position } => self.can_build_house(*position),
+            Action::BuildHotel { position } => self.can_build_hotel(*position),
+            Action::Trade(offer) => self.can_trade(offer),
         }
     }
 
@@ -433,13 +438,19 @@ impl GameState {
         let mut messages = vec![format!("{}'s turn", self.players[player_index].name)];
         let was_current_player = self.current_player == player_index;
 
+        if !self.is_action_valid(&action) {
+            messages.push("Illegal action.".to_string());
+            return StepResult {
+                observation: self.observation(),
+                reward: 0.0,
+                done: self.is_done(),
+                messages,
+            };
+        }
+
         match action {
             Action::Roll => {
-                if self.pending_purchase.is_some() {
-                    messages.push("Finish the pending purchase decision first.".to_string());
-                } else {
-                    self.handle_roll(player_index, &mut messages);
-                }
+                self.handle_roll(player_index, &mut messages);
             }
             Action::BuyProperty => {
                 self.handle_buy(player_index, &mut messages);
@@ -473,6 +484,110 @@ impl GameState {
             done: self.is_done(),
             messages,
         }
+    }
+
+    fn enumerated_legal_actions(&self) -> Vec<Action> {
+        if self.pending_purchase.is_some() {
+            return vec![Action::BuyProperty, Action::DeclineProperty];
+        }
+
+        let mut actions = vec![Action::Roll];
+        actions.extend(self.enumerated_build_actions());
+        actions
+    }
+
+    fn enumerated_build_actions(&self) -> Vec<Action> {
+        let mut actions = Vec::new();
+        for (position, square) in self.board.iter().enumerate() {
+            if !square.is_street() {
+                continue;
+            }
+            if self.can_build_house(position) {
+                actions.push(Action::BuildHouse { position });
+            }
+            if self.can_build_hotel(position) {
+                actions.push(Action::BuildHotel { position });
+            }
+        }
+        actions
+    }
+
+    fn can_buy_pending_property(&self) -> bool {
+        let Some(pending) = self.pending_purchase.as_ref() else {
+            return false;
+        };
+        let Some(cost) = self.board[pending.position].purchase_cost() else {
+            return false;
+        };
+        let Some(lot) = self.lots.get(pending.position).and_then(|lot| lot.as_ref()) else {
+            return false;
+        };
+        lot.owner.is_none() && self.players[self.current_player].cash >= cost
+    }
+
+    fn can_build_house(&self, position: usize) -> bool {
+        let Some(square) = self.board.get(position) else {
+            return false;
+        };
+        if !square.is_street() {
+            return false;
+        }
+        let Some(kind) = square.kind() else {
+            return false;
+        };
+        let PropertyKind::Street { house_cost, .. } = kind else {
+            return false;
+        };
+        let Some(lot) = self.lots.get(position).and_then(|lot| lot.as_ref()) else {
+            return false;
+        };
+        lot.owner == Some(self.current_player)
+            && !lot.hotel
+            && lot.houses < 4
+            && self.player_owns_full_set(self.current_player, position)
+            && self.players[self.current_player].cash >= house_cost
+    }
+
+    fn can_build_hotel(&self, position: usize) -> bool {
+        let Some(square) = self.board.get(position) else {
+            return false;
+        };
+        if !square.is_street() {
+            return false;
+        }
+        let Some(kind) = square.kind() else {
+            return false;
+        };
+        let PropertyKind::Street { house_cost, .. } = kind else {
+            return false;
+        };
+        let Some(lot) = self.lots.get(position).and_then(|lot| lot.as_ref()) else {
+            return false;
+        };
+        lot.owner == Some(self.current_player)
+            && !lot.hotel
+            && lot.houses >= 4
+            && self.player_owns_full_set(self.current_player, position)
+            && self.players[self.current_player].cash >= house_cost
+    }
+
+    fn can_trade(&self, offer: &TradeOffer) -> bool {
+        if offer.from != self.current_player {
+            return false;
+        }
+        if offer.from == offer.to {
+            return false;
+        }
+        if offer.to >= self.players.len() || !self.players[offer.to].active {
+            return false;
+        }
+        if self.players[offer.from].cash < offer.cash_from_offer {
+            return false;
+        }
+        if self.players[offer.to].cash < offer.cash_to_offer {
+            return false;
+        }
+        self.validate_trade_positions(offer.from, offer.to, &offer.give_positions, &offer.receive_positions)
     }
 
     pub fn board_snapshot(&self) -> String {
@@ -1557,19 +1672,39 @@ mod tests {
     }
 
     #[test]
-    fn legal_actions_change_when_purchase_is_pending() {
+    fn legal_actions_only_return_actions_that_are_valid() {
         let mut game = game(2);
-        assert_eq!(game.legal_actions(), vec![Action::Roll, Action::Trade(TradeOffer {
-            from: 0,
-            to: 0,
-            cash_from_offer: 0,
-            cash_to_offer: 0,
-            give_positions: vec![],
-            receive_positions: vec![],
-        })]);
+        for action in game.legal_actions() {
+            assert!(game.is_action_valid(&action), "legal action was not valid: {action:?}");
+        }
+
+        assert_eq!(game.legal_actions(), vec![Action::Roll]);
 
         game.pending_purchase = Some(PendingPurchase { position: 1 });
         assert_eq!(game.legal_actions(), vec![Action::BuyProperty, Action::DeclineProperty]);
+
+        game.pending_purchase = None;
+        set_owner(&mut game, 1, 0);
+        set_owner(&mut game, 3, 0);
+        let actions = game.legal_actions();
+        assert!(actions.contains(&Action::BuildHouse { position: 1 }));
+        assert!(!actions.contains(&Action::BuildHotel { position: 1 }));
+    }
+
+    #[test]
+    fn invalid_actions_do_not_advance_the_turn_or_change_state() {
+        let mut game = game(2);
+        let before_json = game.export_json();
+        let before_turn = game.turn;
+        let before_player = game.current_player;
+
+        let result = game.step(Action::BuyProperty);
+
+        assert!(result.messages.iter().any(|m| m == "Illegal action."));
+        assert_eq!(game.export_json(), before_json);
+        assert_eq!(game.turn, before_turn);
+        assert_eq!(game.current_player, before_player);
+        assert_eq!(result.observation.turn, before_turn);
     }
 
     #[test]
@@ -1586,6 +1721,23 @@ mod tests {
         assert_eq!(game.lots[1].as_ref().and_then(|l| l.owner), Some(0));
         assert_eq!(game.players[0].cash, START_CASH - 60);
         assert!(game.pending_purchase.is_none());
+        assert_eq!(game.current_player, 1);
+    }
+
+    #[test]
+    fn purchase_rejected_when_player_cannot_afford_it() {
+        let mut game = game(2);
+        game.players[0].position = 1;
+        game.players[0].cash = 0;
+        let _ = game.resolve_position(0);
+
+        assert_eq!(game.legal_actions(), vec![Action::DeclineProperty]);
+
+        let before_json = game.export_json();
+        let result = game.step(Action::BuyProperty);
+        assert!(result.messages.iter().any(|m| m == "Illegal action."));
+        assert_eq!(game.export_json(), before_json);
+        assert!(game.pending_purchase.is_some());
     }
 
     #[test]
@@ -1599,6 +1751,45 @@ mod tests {
         assert!(result.messages.iter().any(|m| m.contains("Declined purchase of Acland Street.")));
         assert!(game.pending_purchase.is_none());
         assert_eq!(game.lots[3].as_ref().and_then(|l| l.owner), None);
+        assert_eq!(game.current_player, 1);
+    }
+
+    #[test]
+    fn doubles_keep_the_same_player_for_the_next_turn() {
+        let mut game = game(2);
+
+        let seed = (1..10_000)
+            .find(|seed| {
+                let mut rng = SimpleRng::seeded(*seed);
+                rng.roll_die() == rng.roll_die()
+            })
+            .expect("found a seed that opens with doubles");
+
+        game.rng = SimpleRng::seeded(seed);
+        let before_player = game.current_player;
+
+        let result = game.step(Action::Roll);
+
+        assert!(result.messages.iter().any(|m| m.contains("Doubles rolled: you get another roll.")));
+        assert_eq!(game.current_player, before_player);
+        assert!(game.extra_turn_pending);
+        assert!(game.legal_actions().contains(&Action::Roll) || game.pending_purchase.is_some());
+    }
+
+    #[test]
+    fn building_actions_are_valid_and_consume_the_turn() {
+        let mut game = game(2);
+        set_owner(&mut game, 1, 0);
+        set_owner(&mut game, 3, 0);
+
+        let actions = game.legal_actions();
+        assert!(actions.contains(&Action::BuildHouse { position: 1 }));
+        assert!(actions.contains(&Action::BuildHouse { position: 3 }));
+
+        let result = game.step(Action::BuildHouse { position: 1 });
+        assert!(result.messages.iter().any(|m| m.contains("Built a house on Flinders Lane for $50.")));
+        assert_eq!(game.lots[1].as_ref().unwrap().houses, 1);
+        assert_eq!(game.current_player, 1);
     }
 
     #[test]
